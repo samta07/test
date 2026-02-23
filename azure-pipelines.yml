@@ -1,0 +1,67 @@
+
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  azureServiceConnection: 'YOUR-AZURE-SERVICE-CONNECTION-NAME'
+  appName: 'YOUR-AZURE-APP-SERVICE-NAME'
+
+stages:
+
+# -------------------------
+# Stage 1: Build
+# -------------------------
+- stage: Build
+  displayName: "Build Stage"
+  jobs:
+  - job: BuildJob
+    steps:
+    
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDK'
+      inputs:
+        packageType: 'sdk'
+        version: '8.x'
+    
+    - script: dotnet restore
+      displayName: 'Restore Dependencies'
+
+    - script: dotnet build --configuration $(buildConfiguration)
+      displayName: 'Build Project'
+
+    - script: dotnet publish --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)
+      displayName: 'Publish Project'
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifacts'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+
+# -------------------------
+# Stage 2: Deploy
+# -------------------------
+- stage: Deploy
+  displayName: "Deploy Stage"
+  dependsOn: Build
+  jobs:
+  - deployment: DeployWeb
+    environment: 'dev'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - download: current
+            artifact: drop
+
+          - task: AzureWebApp@1
+            displayName: 'Deploy to Azure App Service'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appName: '$(appName)'
+              package: '$(Pipeline.Workspace)/drop'
